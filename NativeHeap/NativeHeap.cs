@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Unity.Burst;
 
 namespace Unity.Collections {
     using LowLevel.Unsafe;
@@ -46,6 +47,19 @@ namespace Unity.Collections {
     public struct NativeHeap<T, U> : IDisposable
         where T : unmanaged
         where U : unmanaged, IComparer<T> {
+
+        private static int s_staticSafetyId;
+        [BurstDiscard]
+        private static void InitStaticSafetyId(ref AtomicSafetyHandle handle, ref int id)
+        {
+            if (NativeHeap<T, U>.s_staticSafetyId == 0)
+            {
+                NativeHeap<T, U>.s_staticSafetyId = AtomicSafetyHandle.NewStaticSafetyId<NativeHeap<T, U>>();
+            }
+
+            id = s_staticSafetyId;
+            AtomicSafetyHandle.SetStaticSafetyId(ref handle, NativeHeap<T, U>.s_staticSafetyId);
+        }
 
         #region API
 
@@ -429,7 +443,7 @@ namespace Unity.Collections {
         #region IMPLEMENTATION
 
 #if NHEAP_SAFE
-        private static int _nextId = 1;
+
         private int _id;
 
         internal AtomicSafetyHandle m_Safety;
@@ -454,9 +468,9 @@ namespace Unity.Collections {
                 allocator == Allocator.AudioKernel) {
                 throw new ArgumentException(nameof(allocator), "Must provide an Allocator type of Temp, TempJob, or Persistent.");
             }
-
             DisposeSentinel.Create(out m_Safety, out m_DisposeSentinel, disposeSentinelStackDepth, allocator);
-            _id = Interlocked.Increment(ref _nextId);
+            _id = 0;
+            NativeHeap<T, U>.InitStaticSafetyId(ref m_Safety, ref _id);
 #endif
 
             unsafe {
